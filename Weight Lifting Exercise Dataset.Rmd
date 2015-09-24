@@ -75,6 +75,8 @@ E | Throwing the hips to the front
 
 # Summary of the outcome variaible
 summary(training$classe)
+# Histogram of the outcome variable in training dataset
+qplot(x = classe, fill = classe, data = training, main = "Histogram of the outcome variable in the training dataset")
 
 ```
 
