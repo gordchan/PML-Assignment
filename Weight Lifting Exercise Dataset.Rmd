@@ -1,0 +1,156 @@
+---
+title: "Weight Lifting Exercise Dataset: How well are exercised performed?"
+author: "Gordon CHAN"
+date: "2015/9/16"
+output: html_document
+---
+
+# Introduction
+
+In this assignment we perform analysis on the *Weight Lifting Exercises Dataset* by Velloso et al. The aim of the study focus on how well are people performing exercise. In which 6 participants performed barbell lifts correctly and incorrectly in 5 different ways, with accelerometers on the belt, forearm, arm and dumbell on these participants.
+
+In this assignment, I will try to build a model which can predict how well the participants are performing the exercise.
+
+# R-packages and Dataset
+
+The training and testing datasets are downloaded. For the analysis the *Caret* package is used. Since the training datasets is large (11.6MB) the *doParallel* package is also used to enable multi-core processing in R to enhance the data processing speed.
+
+```{r libraries}
+
+library(caret)
+
+# enable multi-core processing
+library(doParallel)
+registerDoParallel(makeCluster(detectCores(), outfile=""))
+
+```
+
+```{r dataset}
+
+# Reading the datasets
+training <- read.csv(file.path("datasets", "pml-training.csv"), header = TRUE, sep = ",", na.strings=c("","NA", "#DIV/0!"))
+testing <- read.csv(file.path("datasets", "pml-testing.csv"), header = TRUE, sep = ",", na.strings=c("","NA", "#DIV/0!"))
+
+# Filesize of training dataset in Megabyte
+file.size(file.path("datasets", "pml-training.csv"))/2^20
+
+```
+
+
+# Exploratory Data Analysis
+
+Two datasets are provided, each containing `r dim.data.frame(testing)[2]` variables, the testing set contains `r dim.data.frame(testing)[1]` observations while the training set contains `r dim.data.frame(training)[1]` observations.
+
+```{r dimensions}
+
+# Dimensions of the datasets
+dim.data.frame(testing)
+dim.data.frame(training)
+
+```
+
+If we take a look at the first and last 10 variables of the dataset, we could see that the first 7 variables contained data regarding the subjects and data collection, while from 8th variable onwards until the second last variable contained measurements from the sensors. For our model fitting, only these variables are useful as predictors.
+
+```{r variables}
+
+# First 10 variables
+names(training)[1:10]
+
+# Last 10 variables
+names(training)[151:160]
+
+```
+
+Now take a look at the summary of the outcome variable, which is "classe" from the training dataset. We could see that it is a categorical variable with 4 classes: A, B, C, D and E. From the dataset's website the classes are defined as follows:
+
+Class | Description
+------|------------
+A | According to the specification (The correct way)
+B | Throwing the elbows to the front
+C | Lifting the dumbbell only halfway
+D | Lowering the dumbbell only halfway
+E | Throwing the hips to the front
+
+```{r outcome variable}
+
+# Summary of the outcome variaible
+summary(training$classe)
+
+```
+
+Before we proceed further, the missing values for each of the variables in the datasets are checked. We can see that there are only 60 variables which have no missing values, while `r ncol(training)-table(colSums(is.na(training)))[1][[1]]` variables contained a majority of missing values out of `r nrow(training)` observations. As a major portion of the data is unavailable there is no meaningful way of inferring them, hence these variables are of little value to our model fitting.
+
+```{r missing}
+
+# Number of variables vs Number of NA in each variable
+table(colSums(is.na(training)))
+
+```
+
+# Data Pre-Processing
+
+The datasets are subseted by removing unnecessary variables. Identical variables removed are removed from the training and testing sets.
+
+```{r removing data}
+
+# Remove the first 7 variables from the datasets
+rm_col <- names(training)[1:7]
+training <- subset(training, select=!(names(training) %in% rm_col))
+testing <- subset(testing, select=!(names(testing) %in% rm_col))
+
+# Remvoe variables with majority number of NA
+rm_col_na <- names(which(colSums(is.na(training)) != 0))
+training <- subset(training, select=!(names(training) %in% rm_col_na))
+testing <- subset(testing, select=!(names(testing) %in% rm_col_na))
+
+```
+
+# Model Fitting
+
+After cleaning the datasets, a model is then fitted. The **Random Forest** algorithm is choosen, as it has a higher predictive accuracy despite having a slow training speed, and it perform well with a large number of variables. To reduce optimistic training error, k-fold cross validation with k=4 is also performed.
+
+```{r model, cache=TRUE}
+# set seed
+set.seed(9999)
+# model fitting with random forest
+modfit <- train(classe ~ ., data = training, method = "rf",
+               trControl = trainControl(method = "cv", number = 4, allowParallel = TRUE))
+
+modfit
+
+```
+
+# Predicting
+
+To evaluate the model fitted, we first perform in-sample predictions on the training dataset followed by creation of confusion matrix. A 100% accuracy was obtained, with a 95% confidence interval of (0.9998, 1).
+
+```{r is.prediction}
+# in-sample predictions
+pred.is <- predict(modfit, training)
+cm.is <- confusionMatrix(pred.is, training$classe)
+
+cm.is
+
+```
+
+
+Predictions were then made on the testing dataset. We would expect the accuracy to follow such of the training set as 100%. To get the worst estimate the lower bound of the 95% CI is used (0.9998). This way we would still expect the out-of-sample error as `r 20*(1-0.9998)` incorrect predictions out of the 20 test samples, which is negligible.
+
+```{r os.prediction}
+# out-of-sample predictions
+pred.os <- predict(modfit, testing)
+pred.result <- data.frame(cbind(testing$problem_id, as.character(pred.os)))
+names(pred.result) <- c("problem_id", "prediction")
+
+pred.result
+
+```
+
+
+# Reference
+
+Human Activity Recognition
+http://groupware.les.inf.puc-rio.br/har
+
+Comparing supervised learning algorithms
+http://www.dataschool.io/comparing-supervised-learning-algorithms/
